@@ -1,0 +1,68 @@
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand">
+      <fp-logo [height]="20" />
+      <span class="brand-sub">Business</span>
+    </div>
+
+    <nav class="nav">
+      @for (section of sections; track section.label) {
+        @if (section.label) {
+          <p class="nav-section">{{ section.label }}</p>
+        }
+        @for (item of section.items; track item.path) {
+          <a
+            class="nav-item"
+            [routerLink]="item.path"
+            routerLinkActive="active"
+            [attr.aria-current]="rla.isActive ? 'page' : null"
+            #rla="routerLinkActive"
+          >
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                [attr.d]="item.icon"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+            <span>{{ item.label }}</span>
+          </a>
+        }
+      }
+    </nav>
+
+    <div class="merchant">
+      <div class="merchant-logo">HM</div>
+      <div class="merchant-text">
+        <p class="merchant-name">Hamro Mobile</p>
+        <p class="merchant-meta">New Road, Kathmandu</p>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <h1>{{ activeLabel() }}</h1>
+      <div class="topbar-right">
+        <button class="icon-button" type="button" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M18 8.5a6 6 0 1 0-12 0c0 5-2 6.5-2 6.5h16s-2-1.5-2-6.5ZM13.7 19a2 2 0 0 1-3.4 0"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+        </button>
+        <div class="avatar">MU</div>
+      </div>
+    </header>
+
+    <main class="content">
+      <router-outlet />
+    </main>
+  </div>
+</div>

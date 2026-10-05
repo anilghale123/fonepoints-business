@@ -1,0 +1,58 @@
+/* Fonepoints Business — portal theme.
+   Brand red matches the Fonepoints wordmark (#D12427). */
+
+:root {
+  --fp-brand: #d12427;
+  --fp-brand-hover: #b81f22;
+  --fp-brand-soft: #fdeceb;
+
+  --fp-bg: #f6f7f9;
+  --fp-surface: #ffffff;
+  --fp-sidebar: #0f1623;
+  --fp-sidebar-muted: #8b94a7;
+  --fp-sidebar-hover: #1b2435;
+
+  --fp-fg: #121826;
+  --fp-fg-secondary: #5b6478;
+  --fp-fg-tertiary: #8b94a7;
+  --fp-border: #e4e7ec;
+
+  --fp-radius: 10px;
+  --fp-sidebar-width: 248px;
+  --fp-topbar-height: 60px;
+
+  --fp-font:
+    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--fp-bg);
+  color: var(--fp-fg);
+  font-family: var(--fp-font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
