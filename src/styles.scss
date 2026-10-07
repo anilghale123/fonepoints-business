@@ -1,13 +1,36 @@
 /* Fonepoints Business — portal theme.
-   Brand red matches the Fonepoints wordmark (#D12427). */
+   Brand red matches the Fonepoints wordmark (#D12427).
+
+   Three things are themed, and they are deliberately separate:
+
+   - `--fp-brand*` is the Fonepoints identity. It never changes. The wordmark and the merchant
+     tile use it, so picking a different accent must not recolour the logo.
+   - `--fp-accent*` is the interactive accent: active nav, primary buttons, focus. The merchant
+     picks it in Settings → Appearance, and the same choice is forwarded to the embedded OMS.
+     Accent ids match OMS's `APPEARANCE_THEMES`, and the values are the identical `oklch()`
+     coordinates, so a swatch here renders as the same colour there.
+   - `--fp-bg` / `--fp-surface` / `--fp-fg*` / `--fp-border` are the light-or-dark surface set,
+     switched by `data-mode` on <html>.
+
+   Each accent supplies one value; the hover and soft steps are mixed from it, so adding an
+   accent is a one-line change. */
 
 :root {
   --fp-brand: #d12427;
   --fp-brand-hover: #b81f22;
-  --fp-brand-soft: #fdeceb;
+  --fp-brand-soft: color-mix(in oklab, var(--fp-brand) 12%, var(--fp-surface));
+
+  /* Default accent is the Fonepoints red, so the portal looks unchanged until the merchant
+     picks something else. */
+  --fp-accent: oklch(0.5559 0.2064 26.62);
+  --fp-accent-fg: #fff;
+  --fp-accent-hover: color-mix(in oklab, var(--fp-accent) 85%, black);
+  --fp-accent-soft: color-mix(in oklab, var(--fp-accent) 12%, var(--fp-surface));
+  --fp-accent-ring: color-mix(in oklab, var(--fp-accent) 35%, transparent);
 
   --fp-bg: #f6f7f9;
   --fp-surface: #ffffff;
+  --fp-surface-raised: #ffffff;
   --fp-sidebar: #0f1623;
   --fp-sidebar-muted: #8b94a7;
   --fp-sidebar-hover: #1b2435;
@@ -20,9 +43,79 @@
   --fp-radius: 10px;
   --fp-sidebar-width: 248px;
   --fp-topbar-height: 60px;
+  --fp-overlay-shadow: 0 12px 32px rgb(16 24 40 / 14%);
 
   --fp-font:
     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  color-scheme: light;
+}
+
+/* ─── Accents ─────────────────────────────────────────────────────────────
+   Ids and `oklch()` values are copied from the OMS design tokens
+   (`src/app/utility.css` in the OMS repo), so the two apps agree on what
+   "emerald" looks like.
+
+   Scoped to any `[data-accent]` element rather than `:root`, so the swatches in
+   the accent picker can carry the attribute and paint themselves with
+   `background: var(--fp-accent)`. That keeps the colours in this file only —
+   the picker holds no copy of them to drift out of step. */
+
+[data-accent='violet-blue'] {
+  --fp-accent: oklch(0.528 0.253 282.555);
+}
+
+[data-accent='blue'] {
+  --fp-accent: oklch(0.534 0.222 272.272);
+}
+
+[data-accent='emerald'] {
+  --fp-accent: oklch(0.633 0.17 148.732);
+}
+
+[data-accent='amber'] {
+  --fp-accent: oklch(0.802 0.171 73.267);
+  /* Amber is light enough that white text on it fails contrast. */
+  --fp-accent-fg: #1a1203;
+}
+
+[data-accent='purple'] {
+  --fp-accent: oklch(0.556 0.252 292.999);
+}
+
+[data-accent='rose'] {
+  --fp-accent: oklch(0.651 0.221 6.174);
+}
+
+[data-accent='gray'] {
+  --fp-accent: oklch(0.2314 0.0078 274.6);
+}
+
+/* ─── Dark ────────────────────────────────────────────────────────────────
+   Set by ThemeService as `data-mode="dark"`, which it resolves from the
+   stored mode (light / dark / system) before applying — so "system" never
+   reaches the DOM, exactly as the host resolves it before telling OMS. */
+
+:root[data-mode='dark'] {
+  --fp-bg: #0d1117;
+  --fp-surface: #161b25;
+  --fp-surface-raised: #1c222e;
+  --fp-sidebar: #090c12;
+  --fp-sidebar-muted: #7d879c;
+  --fp-sidebar-hover: #171d29;
+
+  --fp-fg: #e6e9ef;
+  --fp-fg-secondary: #a3acc0;
+  --fp-fg-tertiary: #727d93;
+  --fp-border: #242b38;
+
+  /* Soft fills tint toward the surface rather than toward white, or they glow. */
+  --fp-brand-soft: color-mix(in oklab, var(--fp-brand) 24%, var(--fp-surface));
+  --fp-accent-soft: color-mix(in oklab, var(--fp-accent) 24%, var(--fp-surface));
+  --fp-accent-hover: color-mix(in oklab, var(--fp-accent) 88%, white);
+  --fp-overlay-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+
+  color-scheme: dark;
 }
 
 * {
@@ -55,4 +148,9 @@ h3 {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--fp-accent);
+  outline-offset: 2px;
 }

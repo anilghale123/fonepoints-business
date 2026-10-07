@@ -1,6 +1,7 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild } from '@angular/core';
 import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
-import { OMS_EMBED_URL, OMS_ORIGIN } from '../../core/config';
+import { OMS_ORIGIN } from '../../core/config';
+import { OmsBridge } from '../../core/oms-bridge';
 
 /**
  * OMS, embedded.
@@ -13,6 +14,11 @@ import { OMS_EMBED_URL, OMS_ORIGIN } from '../../core/config';
  * Angular blocks an iframe `src` it considers untrusted, so the URL is passed through
  * `DomSanitizer`. That is safe here because the origin is our own configuration constant, never
  * user input.
+ *
+ * The frame is registered with `OmsBridge` while this page is on screen. That is what gives the
+ * bridge something to talk to: it answers OMS's `oms.ready` with the current theme, and pushes
+ * every later change. The URL carries the theme as a fragment too, as a pre-paint hint, so OMS
+ * does not flash light inside a dark portal before the first message lands.
  */
 @Component({
   selector: 'fp-oms-page',
@@ -51,7 +57,7 @@ import { OMS_EMBED_URL, OMS_ORIGIN } from '../../core/config';
         width: 26px;
         height: 26px;
         border: 2.5px solid var(--fp-border);
-        border-top-color: var(--fp-brand);
+        border-top-color: var(--fp-accent);
         border-radius: 50%;
         animation: spin 0.7s linear infinite;
       }
@@ -77,21 +83,22 @@ import { OMS_EMBED_URL, OMS_ORIGIN } from '../../core/config';
         padding: 7px 14px;
         border: 0;
         border-radius: 8px;
-        background: var(--fp-brand);
-        color: #fff;
+        background: var(--fp-accent);
+        color: var(--fp-accent-fg);
         font-size: 13px;
         font-weight: 500;
         cursor: pointer;
       }
 
       .retry:hover {
-        background: var(--fp-brand-hover);
+        background: var(--fp-accent-hover);
       }
     `,
   ],
   template: `
     <div class="frame-wrap">
       <iframe
+        #frame
         [src]="src"
         title="Order Management System"
         (load)="onLoad()"
@@ -117,13 +124,29 @@ import { OMS_EMBED_URL, OMS_ORIGIN } from '../../core/config';
     </div>
   `,
 })
-export class OmsPage {
+export class OmsPage implements OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
+  private readonly bridge = inject(OmsBridge);
+
+  private readonly frame = viewChild<ElementRef<HTMLIFrameElement>>('frame');
 
   protected readonly omsOrigin = OMS_ORIGIN;
   protected readonly loaded = signal(false);
   protected readonly failed = signal(false);
-  protected src: SafeResourceUrl = this.sanitizer.bypassSecurityTrustResourceUrl(OMS_EMBED_URL);
+  protected src: SafeResourceUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
+    this.bridge.embedUrl(),
+  );
+
+  constructor() {
+    // Re-registers whenever the element identity changes, which `reload()` deliberately causes.
+    effect(() => this.bridge.register(this.frame()?.nativeElement ?? null));
+  }
+
+  ngOnDestroy(): void {
+    // Leaving the page takes the frame with it, so the bridge must stop treating it as connected
+    // — otherwise a later theme change would post into a detached window.
+    this.bridge.register(null);
+  }
 
   /** A refused frame never fires `load`, so a timeout is the only signal the browser gives us. */
   private timeout = setTimeout(() => {
@@ -140,7 +163,7 @@ export class OmsPage {
     this.failed.set(false);
     this.loaded.set(false);
     // Changing the reference makes Angular re-create the iframe.
-    this.src = this.sanitizer.bypassSecurityTrustResourceUrl(`${OMS_EMBED_URL}?r=${Date.now()}`);
+    this.src = this.sanitizer.bypassSecurityTrustResourceUrl(this.bridge.embedUrl(true));
     this.timeout = setTimeout(() => {
       if (!this.loaded()) this.failed.set(true);
     }, 12000);

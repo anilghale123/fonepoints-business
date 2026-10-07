@@ -6,6 +6,28 @@
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <!--
+    Applies the stored appearance before first paint, so a reload in dark mode does not flash
+    light. Kept in sync with Theme (src/app/core/theme.ts): same storage key, same attributes,
+    same resolution of "system". Inline and synchronous on purpose — a deferred script would
+    run after the first paint, which is the whole problem it exists to avoid.
+  -->
+  <script>
+    (function () {
+      try {
+        var stored = JSON.parse(localStorage.getItem('fp-appearance') || 'null') || {};
+        var mode = stored.mode || 'light';
+        var dark =
+          mode === 'dark' ||
+          (mode === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+        var root = document.documentElement;
+        root.dataset.mode = dark ? 'dark' : 'light';
+        root.dataset.accent = stored.accent || 'fonepoints';
+      } catch (e) {
+        /* Blocked storage or hand-edited JSON. Angular applies the default moments later. */
+      }
+    })();
+  </script>
 </head>
 <body>
   <app-root></app-root>

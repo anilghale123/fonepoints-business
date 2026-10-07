@@ -46,6 +46,35 @@
     <header class="topbar">
       <h1>{{ activeLabel() }}</h1>
       <div class="topbar-right">
+        <button
+          class="icon-button"
+          type="button"
+          [attr.aria-label]="theme.resolved() === 'dark' ? 'Switch to light' : 'Switch to dark'"
+          (click)="theme.toggle()"
+        >
+          @if (theme.resolved() === 'dark') {
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M12 3v1.5M12 19.5V21M4.2 4.2l1.1 1.1M18.7 18.7l1.1 1.1M3 12h1.5M19.5 12H21M4.2 19.8l1.1-1.1M18.7 5.3l1.1-1.1M12 16.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          } @else {
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path
+                d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"
+                stroke="currentColor"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          }
+        </button>
+
         <button class="icon-button" type="button" aria-label="Notifications">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
@@ -57,7 +86,8 @@
             />
           </svg>
         </button>
-        <div class="avatar">MU</div>
+
+        <fp-profile-menu (openSettings)="openSettings($event)" />
       </div>
     </header>
 
@@ -66,3 +96,9 @@
     </main>
   </div>
 </div>
+
+<fp-settings-dialog
+  [open]="settingsOpen()"
+  [initialSection]="settingsSection()"
+  (closed)="settingsOpen.set(false)"
+/>

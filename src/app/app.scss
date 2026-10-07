@@ -73,8 +73,8 @@
   }
 
   &.active {
-    background: var(--fp-brand);
-    color: #fff;
+    background: var(--fp-accent);
+    color: var(--fp-accent-fg);
   }
 }
 
@@ -170,18 +170,6 @@
     background: var(--fp-bg);
     color: var(--fp-fg);
   }
-}
-
-.avatar {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--fp-brand-soft);
-  color: var(--fp-brand);
-  font-size: 12px;
-  font-weight: 600;
 }
 
 /* The content area is the full remaining box. An embedded app fills it edge to edge; a
