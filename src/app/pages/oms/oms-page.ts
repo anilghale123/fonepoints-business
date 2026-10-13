@@ -3,6 +3,10 @@ import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
 import { OMS_ORIGIN } from '../../core/config';
 import { trace } from '../../core/debug-log';
 import { OmsBridge } from '../../core/oms-bridge';
+import { OmsSkeleton } from './oms-skeleton';
+
+/** How long the skeleton takes to fade into the loaded frame; keep in step with `.cover`. */
+const REVEAL_MS = 160;
 
 /**
  * OMS, embedded.
@@ -20,9 +24,14 @@ import { OmsBridge } from '../../core/oms-bridge';
  * bridge something to talk to: it answers OMS's `oms.ready` with the current theme, and pushes
  * every later change. The URL carries the theme as a fragment too, as a pre-paint hint, so OMS
  * does not flash light inside a dark portal before the first message lands.
+ *
+ * Until the frame loads, the page shows OMS's own loading screen (`OmsSkeleton`) rather than a
+ * spinner, and fades it out into the frame, which by then is painting that same skeleton. The
+ * merchant sees one loading state from the click to the orders.
  */
 @Component({
   selector: 'fp-oms-page',
+  imports: [OmsSkeleton],
   styles: [
     `
       :host {
@@ -42,6 +51,30 @@ import { OmsBridge } from '../../core/oms-bridge';
         border: 0;
       }
 
+      .cover {
+        position: absolute;
+        inset: 0;
+        transition: opacity 160ms ease-out;
+      }
+
+      .cover.leaving {
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      /* Pinned to the top: left at its static place, under the full-height frame, it overflowed
+         the page by a pixel, and the scrollbar that caused narrowed the frame. */
+      .sr-only {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
       .state {
         position: absolute;
         inset: 0;
@@ -52,21 +85,6 @@ import { OmsBridge } from '../../core/oms-bridge';
         padding: 24px;
         text-align: center;
         background: var(--fp-bg);
-      }
-
-      .spinner {
-        width: 26px;
-        height: 26px;
-        border: 2.5px solid var(--fp-border);
-        border-top-color: var(--fp-accent);
-        border-radius: 50%;
-        animation: spin 0.7s linear infinite;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
       }
 
       .state p {
@@ -106,12 +124,9 @@ import { OmsBridge } from '../../core/oms-bridge';
         referrerpolicy="origin"
       ></iframe>
 
-      @if (!loaded()) {
-        <div class="state">
-          <div class="spinner"></div>
-          <p>Loading OMS…</p>
-          <code>{{ omsOrigin }}</code>
-        </div>
+      @if (covered()) {
+        <fp-oms-skeleton class="cover" [class.leaving]="loaded()" />
+        <p class="sr-only" role="status">Loading OMS…</p>
       }
 
       @if (failed()) {
@@ -133,7 +148,10 @@ export class OmsPage implements OnDestroy {
 
   protected readonly omsOrigin = OMS_ORIGIN;
   protected readonly loaded = signal(false);
+  /** The skeleton is on screen: until the frame loads, then for the length of the fade. */
+  protected readonly covered = signal(true);
   protected readonly failed = signal(false);
+  private revealTimer: ReturnType<typeof setTimeout> | undefined;
   protected src: SafeResourceUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
     this.bridge.embedUrl(),
   );
@@ -148,6 +166,8 @@ export class OmsPage implements OnDestroy {
     // Leaving the page takes the frame with it, so the bridge must stop treating it as connected
     // — otherwise a later theme change would post into a detached window.
     this.bridge.register(null);
+    clearTimeout(this.timeout);
+    clearTimeout(this.revealTimer);
   }
 
   /** A refused frame never fires `load`, so a timeout is the only signal the browser gives us. */
@@ -162,15 +182,36 @@ export class OmsPage implements OnDestroy {
   }, 12000);
 
   protected onLoad(): void {
+    // The browser fires `load` for the frame's initial about:blank document the moment Angular
+    // inserts it, before OMS has even been requested. Counting that one hid the skeleton at once
+    // and cancelled the timeout, so only OMS's own document counts.
+    if (this.showsInitialBlank()) return;
     trace('page', 'step 3–4 · the OMS frame loaded (the browser allowed the framing)');
     clearTimeout(this.timeout);
     this.loaded.set(true);
     this.failed.set(false);
+    // The frame is already painting the same skeleton, so fade into it rather than cut.
+    clearTimeout(this.revealTimer);
+    this.revealTimer = setTimeout(() => this.covered.set(false), REVEAL_MS);
+  }
+
+  /**
+   * Whether the frame still holds its initial about:blank document. That one is same-origin, so
+   * its location is readable; OMS's document is cross-origin, and reading it throws.
+   */
+  private showsInitialBlank(): boolean {
+    try {
+      return this.frame()?.nativeElement.contentWindow?.location.href === 'about:blank';
+    } catch {
+      return false;
+    }
   }
 
   protected reload(): void {
     this.failed.set(false);
     this.loaded.set(false);
+    this.covered.set(true);
+    clearTimeout(this.revealTimer);
     // Changing the reference makes Angular re-create the iframe.
     this.src = this.sanitizer.bypassSecurityTrustResourceUrl(this.bridge.embedUrl(true));
     this.timeout = setTimeout(() => {
