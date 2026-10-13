@@ -28,7 +28,8 @@ const REVEAL_MS = 160;
  * **It lives in the shell, not in the `/oms` route.** The shell creates it the first time the
  * merchant opens OMS and keeps it while they visit other portal pages: it is only hidden
  * (`visible` false), so coming back costs no reload, no boot and no session check, and the merchant
- * is where they left off — same filter, same open order. `OmsFrameKeeper` decides when it exists:
+ * is in the same OMS session, with its data already in memory; OMS reopens on its order queue, like
+ * any portal section opened from the sidebar. `OmsFrameKeeper` decides when it exists:
  * it is destroyed on sign-out, when the portal session ends, and when a different merchant is
  * signed in, so a frame never outlives the merchant whose orders it holds. When the merchant comes
  * back, OMS is told (`host.visible`) and refreshes what went stale while it was hidden.

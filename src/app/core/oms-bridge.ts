@@ -255,15 +255,27 @@ export class OmsBridge {
   }
 
   /**
-   * The merchant is back on OMS after other portal pages. The frame was kept alive and only
-   * hidden, so nothing in it was refetched meanwhile; OMS refreshes what has gone stale. An older
-   * OMS ignores the message. Skipped before OMS has spoken: a frame still loading has nothing stale.
+   * The merchant is back on OMS after other portal pages, through the OMS link (or the back
+   * button). Like any portal section opened from the sidebar, OMS opens on its landing page, the
+   * order queue, even if it was left on an order (`host.route.request`). The frame was kept alive
+   * and only hidden, so nothing in it was refetched meanwhile: OMS refreshes what has gone stale
+   * (`host.visible`). An older OMS ignores either message. Skipped before OMS has spoken: a frame
+   * still loading is already on its first screen and has nothing stale.
    */
   showAgain(): void {
     const target = this.frame?.contentWindow;
     if (!target || !this.ready()) return;
 
-    trace('bridge', '→ OMS     host.visible (shown again after other portal pages)');
+    trace('bridge', '→ OMS     host.route.request /orders + host.visible (shown again)');
+    target.postMessage(
+      {
+        source: HOST_MESSAGE_SOURCE,
+        v: OMS_PROTOCOL_VERSION,
+        type: 'host.route.request',
+        path: '/orders',
+      },
+      OMS_ORIGIN,
+    );
     target.postMessage(
       { source: HOST_MESSAGE_SOURCE, v: OMS_PROTOCOL_VERSION, type: 'host.visible' },
       OMS_ORIGIN,
