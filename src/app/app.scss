@@ -173,8 +173,10 @@
 }
 
 /* The content area is the full remaining box. An embedded app fills it edge to edge; a
-   portal-native page adds its own padding. */
+   portal-native page adds its own padding. Positioned, because the kept OMS frame sits over it
+   (shown on /oms, hidden elsewhere) rather than in the page flow. */
 .content {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;

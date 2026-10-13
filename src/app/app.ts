@@ -2,9 +2,11 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { NAV_SECTIONS } from './core/nav';
+import { OmsFrameKeeper } from './core/oms-frame-keeper';
 import { PortalSession } from './core/portal-session';
 import { Profile } from './core/profile';
 import { Theme } from './core/theme';
+import { OmsFrame } from './pages/oms/oms-frame';
 import { FonepointsLogo } from './shared/fonepoints-logo';
 import { ProfileMenu } from './shared/profile-menu';
 import { SettingsDialog, type SettingsSection } from './shared/settings-dialog';
@@ -15,6 +17,11 @@ import { SettingsDialog, type SettingsSection } from './shared/settings-dialog';
  *
  * The chrome lives here and only here. An embedded app (OMS) renders inside `.content` and brings
  * no sidebar or header of its own, so the merchant sees one set of navigation.
+ *
+ * OMS's frame is mounted here too, beside the router outlet rather than inside it, so that it
+ * survives navigation: the shell keeps it alive between visits and the `/oms` route only shows it
+ * (`OmsFrameKeeper`). It is loaded with `@defer` the first time OMS is opened, so merchants who
+ * never open OMS never download it.
  *
  * The same applies to appearance: the portal owns light/dark and the accent for the whole window,
  * and `OmsBridge` forwards the choice into the frame. The top bar therefore has a theme toggle
@@ -28,6 +35,7 @@ import { SettingsDialog, type SettingsSection } from './shared/settings-dialog';
     RouterLink,
     RouterLinkActive,
     FonepointsLogo,
+    OmsFrame,
     ProfileMenu,
     SettingsDialog,
   ],
@@ -38,6 +46,7 @@ export class App {
   protected readonly theme = inject(Theme);
   protected readonly session = inject(PortalSession);
   protected readonly profile = inject(Profile);
+  protected readonly omsFrame = inject(OmsFrameKeeper);
   protected readonly sections = NAV_SECTIONS;
   private readonly url = signal('');
 

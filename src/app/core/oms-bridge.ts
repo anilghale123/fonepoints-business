@@ -254,6 +254,22 @@ export class OmsBridge {
     );
   }
 
+  /**
+   * The merchant is back on OMS after other portal pages. The frame was kept alive and only
+   * hidden, so nothing in it was refetched meanwhile; OMS refreshes what has gone stale. An older
+   * OMS ignores the message. Skipped before OMS has spoken: a frame still loading has nothing stale.
+   */
+  showAgain(): void {
+    const target = this.frame?.contentWindow;
+    if (!target || !this.ready()) return;
+
+    trace('bridge', '→ OMS     host.visible (shown again after other portal pages)');
+    target.postMessage(
+      { source: HOST_MESSAGE_SOURCE, v: OMS_PROTOCOL_VERSION, type: 'host.visible' },
+      OMS_ORIGIN,
+    );
+  }
+
   private sendTheme(mode: string, accent: string): void {
     const target = this.frame?.contentWindow;
     if (!target) return;

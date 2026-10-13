@@ -96,6 +96,12 @@
 
       <main class="content">
         <router-outlet />
+        <!-- Kept alive across portal pages; the /oms route only shows it (OmsFrameKeeper). -->
+        @if (omsFrame.kept()) {
+          @defer (on immediate) {
+            <fp-oms-frame [visible]="omsFrame.visible()" />
+          }
+        }
       </main>
     </div>
   </div>
