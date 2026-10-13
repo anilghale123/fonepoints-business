@@ -32,7 +32,7 @@ export interface Accent {
  * — nothing in OMS changes, because it already knows every id.
  */
 export const ACCENTS: readonly Accent[] = [
-  { id: 'fonepoints', label: 'Fonepoints' },
+  { id: 'fonepoints-orange', label: 'Fonepoints' },
   { id: 'violet-blue', label: 'Violet Blue' },
   { id: 'blue', label: 'Blue' },
   { id: 'emerald', label: 'Emerald' },
@@ -48,8 +48,8 @@ export const MODES: readonly { id: ThemeMode; label: string }[] = [
   { id: 'system', label: 'System' },
 ];
 
-/** Default accent is the brand red, so the portal looks the same until someone changes it. */
-const DEFAULT: Appearance = { mode: 'light', accent: 'fonepoints' };
+/** Default accent is Fonepoints orange, matching OMS primary. */
+const DEFAULT: Appearance = { mode: 'light', accent: 'fonepoints-orange' };
 
 const STORAGE_KEY = 'fp-appearance';
 
@@ -66,9 +66,10 @@ function read(): Appearance {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT;
     const value = JSON.parse(raw) as Partial<Appearance>;
+    const accent = value.accent === 'fonepoints' ? 'fonepoints-orange' : value.accent;
     return {
       mode: value.mode && MODE_IDS.has(value.mode) ? value.mode : DEFAULT.mode,
-      accent: value.accent && ACCENT_IDS.has(value.accent) ? value.accent : DEFAULT.accent,
+      accent: accent && ACCENT_IDS.has(accent) ? accent : DEFAULT.accent,
     };
   } catch {
     // Private mode, blocked storage, or hand-edited JSON. The default is always usable.

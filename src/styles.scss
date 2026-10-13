@@ -20,9 +20,9 @@
   --fp-brand-hover: #b81f22;
   --fp-brand-soft: color-mix(in oklab, var(--fp-brand) 12%, var(--fp-surface));
 
-  /* Default accent is the Fonepoints red, so the portal looks unchanged until the merchant
-     picks something else. */
-  --fp-accent: oklch(0.5559 0.2064 26.62);
+  /* Default accent is Fonepoints orange (Brand 500 #FE6E00), matching OMS primary.
+     The wordmark stays `--fp-brand` (red). */
+  --fp-accent: oklch(0.705 0.197 46.27);
   --fp-accent-fg: #fff;
   --fp-accent-hover: color-mix(in oklab, var(--fp-accent) 85%, black);
   --fp-accent-soft: color-mix(in oklab, var(--fp-accent) 12%, var(--fp-surface));
@@ -60,6 +60,11 @@
    the accent picker can carry the attribute and paint themselves with
    `background: var(--fp-accent)`. That keeps the colours in this file only —
    the picker holds no copy of them to drift out of step. */
+
+[data-accent='fonepoints-orange'],
+[data-accent='fonepoints'] {
+  --fp-accent: oklch(0.705 0.197 46.27);
+}
 
 [data-accent='violet-blue'] {
   --fp-accent: oklch(0.528 0.253 282.555);
