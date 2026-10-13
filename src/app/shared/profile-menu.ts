@@ -1,6 +1,7 @@
 import { Component, ElementRef, inject, output, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { OmsBridge } from '../core/oms-bridge';
+import { PortalSession } from '../core/portal-session';
 import { Profile } from '../core/profile';
 import { Theme } from '../core/theme';
 import type { SettingsSection } from './settings-dialog';
@@ -265,6 +266,7 @@ export class ProfileMenu {
   protected readonly theme = inject(Theme);
   private readonly host = inject(ElementRef<HTMLElement>);
   private readonly bridge = inject(OmsBridge);
+  private readonly session = inject(PortalSession);
   private readonly router = inject(Router);
 
   /** Which settings section to open. The dialog itself is owned by the shell. */
@@ -276,11 +278,12 @@ export class ProfileMenu {
     this.openState.update((open) => !open);
   }
 
-  /** Clears OMS's session first, then leaves; the real portal ends its own session here too. */
+  /** Clears OMS's cookie first, then ends the portal session and returns to the login page. */
   protected async signOut(): Promise<void> {
     this.close();
     await this.bridge.signOut();
-    void this.router.navigateByUrl('/');
+    await this.session.logout();
+    void this.router.navigateByUrl('/login');
   }
 
   protected close(): void {

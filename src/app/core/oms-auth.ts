@@ -1,7 +1,7 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { FONEPOINTS_API_URL } from './config';
 import { trace } from './debug-log';
-import { Profile } from './profile';
+import { PortalSession } from './portal-session';
 
 export type OmsAuthStatus = 'idle' | 'requesting' | 'granted' | 'failed';
 
@@ -10,7 +10,7 @@ export type OmsDenyReason = 'no_session' | 'token_request_failed';
 
 @Injectable({ providedIn: 'root' })
 export class OmsAuth {
-  private readonly profile = inject(Profile);
+  private readonly session = inject(PortalSession);
 
   private readonly state = signal<OmsAuthStatus>('idle');
   private readonly error = signal<string | null>(null);
@@ -66,12 +66,6 @@ export class OmsAuth {
         credentials: 'portal session cookie, no body',
       },
     );
-    // The portal session is what names the merchant, so it has to exist
-    const signedIn = await this.ensureSession();
-    if (!signedIn) {
-      return this.fail('no_session', 'Could not sign in to the Fonepoints backend.');
-    }
-
     try {
       const res = await fetch(`${FONEPOINTS_API_URL}/api/oms/token`, {
         method: 'POST',
@@ -89,6 +83,9 @@ export class OmsAuth {
         `step 10 · the backend answered HTTP ${res.status} (${Math.round(performance.now() - startedAt)} ms)`,
       );
       if (res.status === 401) {
+        // The portal session is gone (a restart on an older backend, an expired cookie): the
+        // merchant has to sign in again, so send them to the login page.
+        this.session.expired();
         return this.fail('no_session', body?.error?.message ?? 'Your portal session has ended.');
       }
       if (!res.ok || !body?.accessToken) {
@@ -121,28 +118,5 @@ export class OmsAuth {
     this.state.set('failed');
     this.error.set(message);
     return null;
-  }
-
-  private async ensureSession(): Promise<boolean> {
-    try {
-      const existing = await fetch(`${FONEPOINTS_API_URL}/api/auth/session`, {
-        credentials: 'include',
-      });
-      if (existing.ok) {
-        trace('auth', 'demo only · already signed in to the Fonepoints backend');
-        return true;
-      }
-      trace('auth', 'demo only · no portal session yet; signing in as the demo user');
-
-      const login = await fetch(`${FONEPOINTS_API_URL}/api/auth/login`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: this.profile.user().email }),
-      });
-      return login.ok;
-    } catch {
-      return false;
-    }
   }
 }

@@ -2,6 +2,8 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
 import { NAV_SECTIONS } from './core/nav';
+import { PortalSession } from './core/portal-session';
+import { Profile } from './core/profile';
 import { Theme } from './core/theme';
 import { FonepointsLogo } from './shared/fonepoints-logo';
 import { ProfileMenu } from './shared/profile-menu';
@@ -34,8 +36,13 @@ import { SettingsDialog, type SettingsSection } from './shared/settings-dialog';
 })
 export class App {
   protected readonly theme = inject(Theme);
+  protected readonly session = inject(PortalSession);
+  protected readonly profile = inject(Profile);
   protected readonly sections = NAV_SECTIONS;
   private readonly url = signal('');
+
+  /** The login page is drawn without the sidebar and top bar: there is no merchant yet. */
+  protected readonly onLoginPage = computed(() => this.url().split('?')[0] === '/login');
 
   protected readonly settingsOpen = signal(false);
   protected readonly settingsSection = signal<SettingsSection>('profile');
