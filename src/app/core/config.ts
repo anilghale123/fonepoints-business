@@ -17,9 +17,9 @@ export const OMS_ORIGIN = environment.omsOrigin;
 /**
  * This portal's own backend.
  *
- * It exists for one reason: it holds the OMS company API key. The browser cannot ask OMS for an
- * access token — it has no credential OMS would accept — so it asks this service, which presents
- * the key and hands back the token OMS issues. See `oms-auth.ts`.
+ * It exists for one reason: it holds the Providhy company API key. The browser cannot ask Providhy
+ * IAM for an OMS access token — it has no credential IAM would accept — so it asks this service,
+ * which presents the key to IAM and hands back the token IAM issues. See `oms-auth.ts`.
  *
  * Requests to it are sent with credentials, because the portal session cookie is what proves which
  * merchant is asking.
@@ -28,6 +28,12 @@ export const FONEPOINTS_API_URL = environment.fonepointsApiUrl;
 
 /** Entry point of the embedded OMS surface. */
 export const OMS_EMBED_URL = `${OMS_ORIGIN}/embed/orders`;
+
+/**
+ * OMS's sign-out page. Loaded in a hidden iframe when the merchant signs out of the portal, so OMS
+ * deletes its persistent session cookie (see `OmsBridge.signOut`).
+ */
+export const OMS_SIGNOUT_URL = `${OMS_ORIGIN}/embed-signout`;
 
 /* ─── Host protocol ───────────────────────────────────────────────────────
    The message contract with OMS. Mirrors `src/lib/host/messages.ts` in the OMS repo and is

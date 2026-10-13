@@ -8,6 +8,6 @@
 export const environment = {
   /** Where the OMS frontend is served. Also the only origin the portal will accept messages from. */
   omsOrigin: 'http://localhost:3000',
-  /** The Fonepoints backend, which holds the OMS company API key. */
+  /** The Fonepoints backend (fonepoints-backend), which holds the Providhy company API key. */
   fonepointsApiUrl: 'http://localhost:4000',
 };

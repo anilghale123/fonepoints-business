@@ -5,33 +5,26 @@ import {
   OMS_MESSAGE_SOURCE,
   OMS_ORIGIN,
   OMS_PROTOCOL_VERSION,
+  OMS_SIGNOUT_URL,
 } from './config';
 import { OmsAuth } from './oms-auth';
 import { Theme } from './theme';
 
 /**
- * The portal's side of the `postMessage` conversation with the embedded OMS.
+ * How far the handoff has got for the frame on screen.
  *
- * It carries two things, and they share one channel deliberately:
- *
- * - **The appearance.** The portal owns the theme for the whole window, so when the merchant
- *   switches to dark here, OMS follows inside the frame.
- * - **The access token.** OMS cannot authenticate a merchant on its own. The portal asks its own
- *   backend for a token (`OmsAuth`) and posts it in as `host.auth.grant`; OMS trades it for an
- *   httpOnly cookie of its own and uses it for every request it makes.
- *
- * The handshake is child-driven. The portal cannot know when the OMS bundle has parsed and
- * attached its listener, so it never sends first — it waits for `oms.ready` and answers. OMS
- * sends `oms.ready` again after every reload (including a dev-server hot reload), so the answer
- * must be re-sent every time rather than once per session. That invariant is what makes the
- * handoff survive a reload inside the frame without the merchant noticing.
- *
- * `connected` and `authState` exist so the integration is visible without opening devtools:
- * Settings → Appearance shows whether OMS answered, when the theme last went out, and whether the
- * token was accepted.
+ * `checking` — OMS is up and checking its own session; the portal waits. `reused` — OMS already
+ * had a valid session, so no token was requested. `requesting` / `sent` / `accepted` — OMS asked
+ * for a token (none, or an expired one), and this is how far that got.
  */
-/** How far the token handoff has got for the frame currently on screen. */
-type HandoffState = 'idle' | 'sent' | 'accepted' | 'rejected';
+type HandoffState =
+  | 'idle'
+  | 'checking'
+  | 'requesting'
+  | 'sent'
+  | 'accepted'
+  | 'reused'
+  | 'rejected';
 
 @Injectable({ providedIn: 'root' })
 export class OmsBridge {
@@ -110,17 +103,23 @@ export class OmsBridge {
     if (event.origin !== OMS_ORIGIN) return;
     if (!this.frame || event.source !== this.frame.contentWindow) return;
 
-    const message = event.data as { source?: unknown; v?: unknown; type?: unknown } | null;
+    const message = event.data as {
+      source?: unknown;
+      v?: unknown;
+      type?: unknown;
+      session?: unknown;
+      reason?: unknown;
+    } | null;
     if (typeof message !== 'object' || message === null) return;
     if (message.source !== OMS_MESSAGE_SOURCE || message.v !== OMS_PROTOCOL_VERSION) return;
 
+    // Theme only. This portal cannot see whether OMS already has a session — the token sits in
+    // OMS's own HttpOnly cookie — so it does not guess. OMS checks and answers with
+    // `oms.auth.ok` (nothing to do) or `oms.auth.renew` (send a token).
     if (message.type === 'oms.ready') {
       this.ready.set(true);
+      this.handoff.set('checking');
       this.sendTheme(this.theme.resolved(), this.theme.accent());
-      // Answered with a token as well as a theme. OMS asks separately (`oms.auth.renew`) only
-      // when it already had a session and it stopped working, so granting here covers the first
-      // load and every reload with no extra round trip.
-      void this.sendGrant();
     }
 
     // OMS took the token and could not use it. Re-requesting would produce the same answer from
@@ -129,14 +128,17 @@ export class OmsBridge {
       this.handoff.set('rejected');
     }
 
+    // `existing`: OMS's cookie was still valid and no token was needed. Older OMS builds send no
+    // `session` field, and only ever after a grant.
     if (message.type === 'oms.auth.ok') {
-      this.handoff.set('accepted');
+      this.handoff.set(message.session === 'existing' ? 'reused' : 'accepted');
     }
 
-    // OMS has no valid session and is asking for one. `force` because whatever it held is no
-    // longer accepted — a revoke, or a reseed of the OMS backend.
+    // OMS has no session cookie (`missing`), or the token it had was refused (`rejected`): ask the
+    // backend for a token. Same call either way, because the portal keeps no token of its own.
+    // The one message that starts a token request.
     if (message.type === 'oms.auth.renew') {
-      void this.sendGrant(true);
+      void this.sendGrant();
     }
 
     // `oms.route.changed` is specified in `auth.md` section 8 and handled when that phase lands.
@@ -147,17 +149,20 @@ export class OmsBridge {
   /**
    * Asks our backend for an access token and posts it into the frame.
    *
-   * The token is handed straight over and never kept: this method is the only code on the portal
-   * side that holds it, and only for the length of one call.
+   * The token comes from `OmsAuth`, which asks the backend and keeps nothing: the token is posted
+   * to OMS and dropped.
    *
    * A failure is posted as `host.auth.denied` rather than left silent, so OMS can tell the
    * merchant why it is empty instead of showing a spinner that never resolves.
+   *
+   * Only `oms.auth.renew` calls this. A request already in flight is reused rather than doubled.
    */
-  private async sendGrant(force = false): Promise<void> {
+  private async sendGrant(): Promise<void> {
     const target = this.frame?.contentWindow;
     if (!target) return;
 
-    const token = await this.auth.token(force);
+    this.handoff.set('requesting');
+    const token = await this.auth.token();
 
     // The frame may have been replaced, or the page left, while the request was in flight.
     if (this.frame?.contentWindow !== target) return;
@@ -169,7 +174,7 @@ export class OmsBridge {
           source: HOST_MESSAGE_SOURCE,
           v: OMS_PROTOCOL_VERSION,
           type: 'host.auth.denied',
-          reason: 'token_request_failed',
+          reason: this.auth.denyReason(),
         },
         OMS_ORIGIN,
       );
@@ -210,5 +215,47 @@ export class OmsBridge {
       OMS_ORIGIN,
     );
     this.sentAt.set(new Date());
+  }
+
+  /**
+   * Portal sign-out, for OMS: deletes OMS's persistent session cookie.
+   *
+   * OMS keeps the token in an HttpOnly cookie on its own site, which this page cannot delete. So it
+   * loads OMS's sign-out page in a hidden iframe; OMS deletes its cookies and answers
+   * `oms.auth.cleared`. Because the cookie is partitioned to this portal, the hidden frame reaches
+   * the same cookie the OMS page uses, whether or not OMS is open right now.
+   *
+   * Call it from the portal's own sign-out, before ending the portal session. Resolves `true`
+   * when OMS confirmed, `false` after five seconds without an answer.
+   */
+  signOut(): Promise<boolean> {
+    this.auth.clear();
+    this.handoff.set('idle');
+
+    return new Promise((resolve) => {
+      const frame = document.createElement('iframe');
+      frame.hidden = true;
+      frame.title = 'Signing out of OMS';
+      frame.src = OMS_SIGNOUT_URL;
+
+      const finish = (confirmed: boolean) => {
+        window.removeEventListener('message', onMessage);
+        clearTimeout(timer);
+        frame.remove();
+        resolve(confirmed);
+      };
+
+      // The same three checks as `onMessage`, against the hidden frame.
+      const onMessage = (event: MessageEvent) => {
+        if (event.origin !== OMS_ORIGIN || event.source !== frame.contentWindow) return;
+        const data = event.data as { source?: unknown; v?: unknown; type?: unknown } | null;
+        if (data?.source !== OMS_MESSAGE_SOURCE || data.v !== OMS_PROTOCOL_VERSION) return;
+        if (data.type === 'oms.auth.cleared') finish(true);
+      };
+
+      const timer = setTimeout(() => finish(false), 5000);
+      window.addEventListener('message', onMessage);
+      document.body.appendChild(frame);
+    });
   }
 }

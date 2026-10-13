@@ -1,4 +1,6 @@
 import { Component, ElementRef, inject, output, signal } from '@angular/core';
+import { Router } from '@angular/router';
+import { OmsBridge } from '../core/oms-bridge';
 import { Profile } from '../core/profile';
 import { Theme } from '../core/theme';
 import type { SettingsSection } from './settings-dialog';
@@ -10,9 +12,9 @@ import type { SettingsSection } from './settings-dialog';
  * so the two apps present the same affordances in the same order. "Switch theme" flips light and
  * dark straight from the menu; the full picker lives in Settings → Appearance.
  *
- * Sign out is disabled: authentication is deferred, so there is no session to end
- * (`auth.md`). It is shown rather than hidden, because its absence would read as missing rather
- * than pending.
+ * Sign out signs the merchant out of OMS too: OMS keeps its session in a cookie that outlives the
+ * browser, so the portal has to tell it to delete that cookie (`OmsBridge.signOut`). The demo has
+ * no real portal session to end afterwards; the real portal ends its own session right after.
  */
 @Component({
   selector: 'fp-profile-menu',
@@ -242,7 +244,7 @@ import type { SettingsSection } from './settings-dialog';
 
         <hr />
 
-        <button class="item" type="button" role="menuitem" disabled>
+        <button class="item" type="button" role="menuitem" (click)="signOut()">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path
               d="M15 17l5-5-5-5M20 12H9M12 20H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h6"
@@ -262,6 +264,8 @@ export class ProfileMenu {
   protected readonly profile = inject(Profile);
   protected readonly theme = inject(Theme);
   private readonly host = inject(ElementRef<HTMLElement>);
+  private readonly bridge = inject(OmsBridge);
+  private readonly router = inject(Router);
 
   /** Which settings section to open. The dialog itself is owned by the shell. */
   readonly openSettings = output<SettingsSection>();
@@ -270,6 +274,13 @@ export class ProfileMenu {
 
   protected toggle(): void {
     this.openState.update((open) => !open);
+  }
+
+  /** Clears OMS's session first, then leaves; the real portal ends its own session here too. */
+  protected async signOut(): Promise<void> {
+    this.close();
+    await this.bridge.signOut();
+    void this.router.navigateByUrl('/');
   }
 
   protected close(): void {

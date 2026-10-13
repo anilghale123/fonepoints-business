@@ -2,33 +2,10 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { FONEPOINTS_API_URL } from './config';
 import { Profile } from './profile';
 
-/**
- * Where the OMS access token comes from.
- *
- * The flow this implements, in full:
- *
- *   1. The merchant presses OMS in the sidebar.
- *   2. This service asks **our own backend** for a token (`POST /api/oms/token`).
- *   3. That backend presents the OMS company API key to the OMS backend.
- *   4. OMS validates the key, resolves the merchant, and issues an access token.
- *   5. The token comes back here, and `OmsBridge` posts it into the iframe.
- *
- * Step 3 is the whole reason for the indirection: the API key is a company credential, and a
- * browser is the wrong place for it. This service never sees it.
- *
- * The token itself is held only in memory, and only until the frame has it. It is not stored:
- * reopening OMS takes one round trip, and a credential in `localStorage` outlives the reason it
- * was issued.
- */
-
 export type OmsAuthStatus = 'idle' | 'requesting' | 'granted' | 'failed';
 
-export interface OmsMerchant {
-  merchantId: string;
-  companyName: string;
-  location: string;
-  logoUrl: string;
-}
+/** Why there is no token, as OMS understands it (`host.auth.denied { reason }`). */
+export type OmsDenyReason = 'no_session' | 'token_request_failed';
 
 @Injectable({ providedIn: 'root' })
 export class OmsAuth {
@@ -36,28 +13,30 @@ export class OmsAuth {
 
   private readonly state = signal<OmsAuthStatus>('idle');
   private readonly error = signal<string | null>(null);
-  private readonly merchantInfo = signal<OmsMerchant | null>(null);
+  private readonly denied = signal<OmsDenyReason>('token_request_failed');
 
   readonly status = computed(() => this.state());
   readonly failure = computed(() => this.error());
-  readonly merchant = computed(() => this.merchantInfo());
+  /** Why the last request gave no token, for `host.auth.denied`. */
+  readonly denyReason = computed(() => this.denied());
 
   /**
+   * The portal keeps no token. OMS tokens do not expire, so one held here would sit where any
+   * script on the page could read it, to save a backend call that happens only when OMS has no
+   * cookie. The token goes from the backend to OMS and is dropped. Whether the backend keeps one
+   * between visits is the backend's call.
+   *
    * In flight, if a request is already running.
    *
-   * OMS announces `oms.ready` on every reload, and the bridge answers each one. Without this, a
-   * dev-server hot reload inside the frame could start several token requests at once.
+   * OMS asks once per handshake, but a reload inside the frame, or a second frame, can ask again
+   * before the first answer is back. The token in flight is just as good, so it is shared rather
+   * than requested twice. It is shared only while the request runs, not afterwards.
    */
   private inFlight: Promise<string | null> | null = null;
 
-  /**
-   * A token for the current merchant, or `null` with `failure()` set.
-   *
-   * `force` discards an in-flight request and starts a new one; it is what `oms.auth.renew` from
-   * OMS means — the session it had has stopped working, so a cached answer is no use.
-   */
-  token(force = false): Promise<string | null> {
-    if (this.inFlight && !force) return this.inFlight;
+  /** A token for the current merchant, or `null` with `failure()` and `denyReason()` set. */
+  token(): Promise<string | null> {
+    if (this.inFlight) return this.inFlight;
 
     this.state.set('requesting');
     this.error.set(null);
@@ -69,52 +48,56 @@ export class OmsAuth {
     return this.inFlight;
   }
 
+  /** Reset the status shown in settings, at portal sign-out. There is no token to forget. */
+  clear(): void {
+    this.state.set('idle');
+  }
+
   private async request(): Promise<string | null> {
-    // The portal session is what names the merchant, so it has to exist before asking.
+    // The portal session is what names the merchant, so it has to exist
     const signedIn = await this.ensureSession();
     if (!signedIn) {
-      this.state.set('failed');
-      this.error.set('Could not sign in to the Fonepoints backend.');
-      return null;
+      return this.fail('no_session', 'Could not sign in to the Fonepoints backend.');
     }
 
     try {
       const res = await fetch(`${FONEPOINTS_API_URL}/api/oms/token`, {
         method: 'POST',
+        // The portal session cookie names the merchant. No body: the backend decides the rest.
         credentials: 'include',
-        headers: { 'content-type': 'application/json' },
       });
 
       const body = (await res.json().catch(() => null)) as
-        | { accessToken?: string; merchant?: OmsMerchant; error?: { message?: string } }
+        | { accessToken?: string; error?: { message?: string } }
         | null;
 
+      if (res.status === 401) {
+        return this.fail('no_session', body?.error?.message ?? 'Your portal session has ended.');
+      }
       if (!res.ok || !body?.accessToken) {
-        this.state.set('failed');
-        this.error.set(body?.error?.message ?? 'OMS refused to issue an access token.');
-        return null;
+        return this.fail(
+          'token_request_failed',
+          body?.error?.message ?? 'The Fonepoints backend could not get an OMS access token.',
+        );
       }
 
-      this.merchantInfo.set(body.merchant ?? null);
       this.state.set('granted');
       return body.accessToken;
     } catch {
-      this.state.set('failed');
-      this.error.set(
+      return this.fail(
+        'token_request_failed',
         `Could not reach the Fonepoints backend at ${FONEPOINTS_API_URL}. Is it running?`,
       );
-      return null;
     }
   }
 
-  /**
-   * Makes sure there is a portal session, signing in as the profile's email if there is not.
-   *
-   * The automatic sign-in is the demo shortcut: this prototype has no password screen, and the
-   * profile in Settings is the stand-in for an identity. What matters for the handoff is that a
-   * session exists at all — the merchant the token is for comes from it, server-side, so it cannot
-   * be chosen by this code.
-   */
+  private fail(reason: OmsDenyReason, message: string): null {
+    this.denied.set(reason);
+    this.state.set('failed');
+    this.error.set(message);
+    return null;
+  }
+
   private async ensureSession(): Promise<boolean> {
     try {
       const existing = await fetch(`${FONEPOINTS_API_URL}/api/auth/session`, {

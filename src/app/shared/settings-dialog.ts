@@ -459,7 +459,10 @@ export type SettingsSection = 'profile' | 'appearance';
             </p>
 
             <p class="link-status">
-              <span class="dot" [class.live]="bridge.authState() === 'accepted'"></span>
+              <span
+                class="dot"
+                [class.live]="bridge.authState() === 'accepted' || bridge.authState() === 'reused'"
+              ></span>
               <span>{{ authStatus() }}</span>
             </p>
           }
@@ -520,6 +523,12 @@ export class SettingsDialog {
    */
   protected readonly authStatus = computed(() => {
     switch (this.bridge.authState()) {
+      case 'checking':
+        return 'OMS is checking whether it already has a session.';
+      case 'reused':
+        return 'OMS already had a valid session — no new token was needed.';
+      case 'requesting':
+        return 'OMS asked for a token — requesting one from the Fonepoints backend.';
       case 'accepted':
         return 'OMS accepted the access token.';
       case 'sent':
@@ -527,7 +536,7 @@ export class SettingsDialog {
       case 'rejected':
         return this.bridge.authFailure() ?? 'OMS could not use the access token.';
       default:
-        return 'No access token sent yet — one is issued when OMS opens.';
+        return 'No access token sent yet. OMS asks for one only when it has no valid session.';
     }
   });
 
