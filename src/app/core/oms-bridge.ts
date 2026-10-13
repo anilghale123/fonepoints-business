@@ -7,6 +7,7 @@ import {
   OMS_PROTOCOL_VERSION,
   OMS_SIGNOUT_URL,
 } from './config';
+import { trace } from './debug-log';
 import { OmsAuth } from './oms-auth';
 import { Theme } from './theme';
 
@@ -18,13 +19,7 @@ import { Theme } from './theme';
  * for a token (none, or an expired one), and this is how far that got.
  */
 type HandoffState =
-  | 'idle'
-  | 'checking'
-  | 'requesting'
-  | 'sent'
-  | 'accepted'
-  | 'reused'
-  | 'rejected';
+  'idle' | 'checking' | 'requesting' | 'sent' | 'accepted' | 'reused' | 'rejected';
 
 @Injectable({ providedIn: 'root' })
 export class OmsBridge {
@@ -69,6 +64,10 @@ export class OmsBridge {
    * would mean pushing a theme into a document that is not listening.
    */
   register(frame: HTMLIFrameElement | null): void {
+    trace(
+      'bridge',
+      frame ? 'OMS frame registered: waiting for oms.ready' : 'OMS frame unregistered',
+    );
     this.frame = frame;
     this.ready.set(false);
     this.sentAt.set(null);
@@ -100,9 +99,6 @@ export class OmsBridge {
     // Three independent checks, all required. Origin alone is not enough — any document from
     // that origin could post to this window — and the envelope alone is not enough, because
     // anyone can set a `source` field.
-    if (event.origin !== OMS_ORIGIN) return;
-    if (!this.frame || event.source !== this.frame.contentWindow) return;
-
     const message = event.data as {
       source?: unknown;
       v?: unknown;
@@ -110,13 +106,54 @@ export class OmsBridge {
       session?: unknown;
       reason?: unknown;
     } | null;
+    // Only a message that says it is from OMS is worth a log line when it is refused; everything
+    // else that lands on this window (dev tools, extensions, the dev server) is noise.
+    const claimsOms =
+      typeof message === 'object' && message !== null && message.source === OMS_MESSAGE_SOURCE;
+
+    if (event.origin !== OMS_ORIGIN) {
+      if (claimsOms) {
+        trace(
+          'bridge',
+          '✖ step 5 · refused a message that claims to be OMS: wrong origin (check B)',
+          {
+            origin: event.origin,
+            expected: OMS_ORIGIN,
+          },
+        );
+      }
+      return;
+    }
+    if (!this.frame || event.source !== this.frame.contentWindow) {
+      if (claimsOms) {
+        trace('bridge', '✖ step 5 · refused a message: not sent by the OMS iframe (check B)');
+      }
+      return;
+    }
     if (typeof message !== 'object' || message === null) return;
-    if (message.source !== OMS_MESSAGE_SOURCE || message.v !== OMS_PROTOCOL_VERSION) return;
+    if (message.source !== OMS_MESSAGE_SOURCE || message.v !== OMS_PROTOCOL_VERSION) {
+      if (claimsOms) {
+        trace('bridge', '✖ step 5 · refused a message: wrong protocol version (check B)', {
+          v: message.v,
+          expected: OMS_PROTOCOL_VERSION,
+        });
+      }
+      return;
+    }
+    trace(
+      'bridge',
+      `← OMS     ${String(message.type)}  (origin, window and envelope checked)`,
+      message,
+    );
 
     // Theme only. This portal cannot see whether OMS already has a session — the token sits in
     // OMS's own HttpOnly cookie — so it does not guess. OMS checks and answers with
     // `oms.auth.ok` (nothing to do) or `oms.auth.renew` (send a token).
     if (message.type === 'oms.ready') {
+      trace(
+        'bridge',
+        'step 4 · OMS is loaded and listening; answering with the theme only, no token',
+      );
       this.ready.set(true);
       this.handoff.set('checking');
       this.sendTheme(this.theme.resolved(), this.theme.accent());
@@ -125,12 +162,19 @@ export class OmsBridge {
     // OMS took the token and could not use it. Re-requesting would produce the same answer from
     // the same session, so this is surfaced rather than retried.
     if (message.type === 'oms.auth.failed') {
+      trace('bridge', '✖ OMS could not store the token it was given; not retrying on its own');
       this.handoff.set('rejected');
     }
 
     // `existing`: OMS's cookie was still valid and no token was needed. Older OMS builds send no
     // `session` field, and only ever after a grant.
     if (message.type === 'oms.auth.ok') {
+      trace(
+        'bridge',
+        message.session === 'existing'
+          ? '✔ step 7 · OMS already had a session cookie: no token needed, none sent'
+          : '✔ step 22 · OMS stored the new token and is signed in',
+      );
       this.handoff.set(message.session === 'existing' ? 'reused' : 'accepted');
     }
 
@@ -138,6 +182,7 @@ export class OmsBridge {
     // backend for a token. Same call either way, because the portal keeps no token of its own.
     // The one message that starts a token request.
     if (message.type === 'oms.auth.renew') {
+      trace('bridge', `step 8–9 · OMS asked for a token (reason: ${String(message.reason)})`);
       void this.sendGrant();
     }
 
@@ -159,15 +204,22 @@ export class OmsBridge {
    */
   private async sendGrant(): Promise<void> {
     const target = this.frame?.contentWindow;
-    if (!target) return;
+    if (!target) {
+      trace('bridge', 'a token was requested but there is no OMS frame on screen; nothing to do');
+      return;
+    }
 
     this.handoff.set('requesting');
     const token = await this.auth.token();
 
     // The frame may have been replaced, or the page left, while the request was in flight.
-    if (this.frame?.contentWindow !== target) return;
+    if (this.frame?.contentWindow !== target) {
+      trace('bridge', 'the OMS frame was replaced while waiting for the backend: sending nothing');
+      return;
+    }
 
     if (!token) {
+      trace('bridge', `✖ step 10–12 · → OMS     host.auth.denied (${this.auth.denyReason()})`);
       this.handoff.set('rejected');
       target.postMessage(
         {
@@ -181,6 +233,10 @@ export class OmsBridge {
       return;
     }
 
+    trace('bridge', '✔ step 14–15 · → OMS     host.auth.grant (to the exact OMS origin)', {
+      token,
+      to: OMS_ORIGIN,
+    });
     this.handoff.set('sent');
     target.postMessage(
       {
@@ -202,6 +258,7 @@ export class OmsBridge {
     const target = this.frame?.contentWindow;
     if (!target) return;
 
+    trace('bridge', '→ OMS     host.theme', { mode, accent, to: OMS_ORIGIN });
     target.postMessage(
       {
         source: HOST_MESSAGE_SOURCE,
@@ -229,6 +286,7 @@ export class OmsBridge {
    * when OMS confirmed, `false` after five seconds without an answer.
    */
   signOut(): Promise<boolean> {
+    trace('signout', 'step 29 · signing out: loading OMS’s sign-out page in a hidden frame');
     this.auth.clear();
     this.handoff.set('idle');
 
@@ -239,6 +297,12 @@ export class OmsBridge {
       frame.src = OMS_SIGNOUT_URL;
 
       const finish = (confirmed: boolean) => {
+        trace(
+          'signout',
+          confirmed
+            ? '✔ step 32–33 · OMS confirmed: its cookie is deleted; removing the hidden frame'
+            : '✖ OMS did not answer within 5 s; signing out of the portal anyway (the cookie may remain)',
+        );
         window.removeEventListener('message', onMessage);
         clearTimeout(timer);
         frame.remove();

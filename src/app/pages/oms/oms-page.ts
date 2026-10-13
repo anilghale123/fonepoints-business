@@ -1,6 +1,7 @@
 import { Component, ElementRef, OnDestroy, effect, inject, signal, viewChild } from '@angular/core';
 import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
 import { OMS_ORIGIN } from '../../core/config';
+import { trace } from '../../core/debug-log';
 import { OmsBridge } from '../../core/oms-bridge';
 
 /**
@@ -138,6 +139,7 @@ export class OmsPage implements OnDestroy {
   );
 
   constructor() {
+    trace('page', `step 1 · merchant opened OMS; framing ${OMS_ORIGIN} (no token in the URL)`);
     // Re-registers whenever the element identity changes, which `reload()` deliberately causes.
     effect(() => this.bridge.register(this.frame()?.nativeElement ?? null));
   }
@@ -150,10 +152,17 @@ export class OmsPage implements OnDestroy {
 
   /** A refused frame never fires `load`, so a timeout is the only signal the browser gives us. */
   private timeout = setTimeout(() => {
-    if (!this.loaded()) this.failed.set(true);
+    if (!this.loaded()) {
+      trace(
+        'page',
+        '✖ step 3 · OMS did not load within 12 s: blocked by frame-ancestors, or not running',
+      );
+      this.failed.set(true);
+    }
   }, 12000);
 
   protected onLoad(): void {
+    trace('page', 'step 3–4 · the OMS frame loaded (the browser allowed the framing)');
     clearTimeout(this.timeout);
     this.loaded.set(true);
     this.failed.set(false);

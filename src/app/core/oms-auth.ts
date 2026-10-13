@@ -1,5 +1,6 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { FONEPOINTS_API_URL } from './config';
+import { trace } from './debug-log';
 import { Profile } from './profile';
 
 export type OmsAuthStatus = 'idle' | 'requesting' | 'granted' | 'failed';
@@ -36,7 +37,10 @@ export class OmsAuth {
 
   /** A token for the current merchant, or `null` with `failure()` and `denyReason()` set. */
   token(): Promise<string | null> {
-    if (this.inFlight) return this.inFlight;
+    if (this.inFlight) {
+      trace('auth', 'a token request is already running: sharing it instead of calling twice');
+      return this.inFlight;
+    }
 
     this.state.set('requesting');
     this.error.set(null);
@@ -54,6 +58,14 @@ export class OmsAuth {
   }
 
   private async request(): Promise<string | null> {
+    const startedAt = performance.now();
+    trace(
+      'auth',
+      `step 9 · asking the Fonepoints backend: POST ${FONEPOINTS_API_URL}/api/oms/token`,
+      {
+        credentials: 'portal session cookie, no body',
+      },
+    );
     // The portal session is what names the merchant, so it has to exist
     const signedIn = await this.ensureSession();
     if (!signedIn) {
@@ -67,10 +79,15 @@ export class OmsAuth {
         credentials: 'include',
       });
 
-      const body = (await res.json().catch(() => null)) as
-        | { accessToken?: string; error?: { message?: string } }
-        | null;
+      const body = (await res.json().catch(() => null)) as {
+        accessToken?: string;
+        error?: { message?: string };
+      } | null;
 
+      trace(
+        'auth',
+        `step 10 · the backend answered HTTP ${res.status} (${Math.round(performance.now() - startedAt)} ms)`,
+      );
       if (res.status === 401) {
         return this.fail('no_session', body?.error?.message ?? 'Your portal session has ended.');
       }
@@ -81,6 +98,13 @@ export class OmsAuth {
         );
       }
 
+      trace(
+        'auth',
+        '✔ step 13–14 · the backend returned an accessToken; passing it on, keeping nothing',
+        {
+          accessToken: body.accessToken,
+        },
+      );
       this.state.set('granted');
       return body.accessToken;
     } catch {
@@ -92,6 +116,7 @@ export class OmsAuth {
   }
 
   private fail(reason: OmsDenyReason, message: string): null {
+    trace('auth', `✖ no token (${reason}): ${message}`);
     this.denied.set(reason);
     this.state.set('failed');
     this.error.set(message);
@@ -103,7 +128,11 @@ export class OmsAuth {
       const existing = await fetch(`${FONEPOINTS_API_URL}/api/auth/session`, {
         credentials: 'include',
       });
-      if (existing.ok) return true;
+      if (existing.ok) {
+        trace('auth', 'demo only · already signed in to the Fonepoints backend');
+        return true;
+      }
+      trace('auth', 'demo only · no portal session yet; signing in as the demo user');
 
       const login = await fetch(`${FONEPOINTS_API_URL}/api/auth/login`, {
         method: 'POST',
