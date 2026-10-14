@@ -12,9 +12,9 @@ interface SkeletonColumn {
  * The first thing OMS paints inside the frame is that same loading state (`OrderScreenSkeleton`
  * in frontend-oms: the page title, the toolbar, the table header and five skeleton rows), and the
  * queue keeps it until its orders arrive. This copy matches it block for block — same page
- * padding, title row, card (filling the frame's height, as OMS's does since 2026-10-14), toolbar,
- * header row, row height and column widths — so when the frame takes over, nothing moves: the
- * merchant sees one loading screen, not a spinner, then a different skeleton, then the table.
+ * padding, title row, card, toolbar, header row, row height and column widths — so when the frame
+ * takes over, nothing moves: the merchant sees one loading screen, not a spinner, then a different
+ * skeleton, then the table. (OMS's card is as tall as its rows, so the cover's is too: five rows.)
  *
  * Every number here was measured from OMS in a browser (2026-10-13) at frame widths 375–1500.
  * If OMS's queue layout changes (a column, the toolbar, the padding), re-measure and update this.
@@ -42,7 +42,6 @@ interface SkeletonColumn {
         --oms-border: oklch(0.906 0.005 264.535);
 
         display: block;
-        height: 100%;
         overflow: hidden;
         /* No padding here: the queries must see the iframe's width, not a padded one. */
         container-type: inline-size;
@@ -57,12 +56,7 @@ interface SkeletonColumn {
         --oms-border: oklch(0.275 0.009 264.424);
       }
 
-      /* OMS's content area is the frame's height, and the queue card fills what the title leaves. */
       .page {
-        display: flex;
-        flex-direction: column;
-        box-sizing: border-box;
-        height: 100%;
         padding: 16px;
       }
 
@@ -90,8 +84,6 @@ interface SkeletonColumn {
       }
 
       .card {
-        flex: 1;
-        min-height: 320px;
         margin-top: 12px;
         overflow: hidden;
         border: 1px solid var(--oms-border);
