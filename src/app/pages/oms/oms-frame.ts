@@ -36,9 +36,14 @@ const REVEAL_MS = 160;
  * signed in, so a frame never outlives the merchant whose orders it holds. When the merchant comes
  * back, OMS is told (`host.visible`) and refreshes what went stale while it was hidden.
  *
- * Hidden with `visibility: hidden` rather than `display: none`: the frame keeps its size, so OMS's
- * layout does not change under it, and it is still out of the accessibility tree, unfocusable and
- * not painted.
+ * Hidden by making it fully transparent (`opacity: 0`), not with `visibility: hidden` or
+ * `display: none`. Chrome stops painting a hidden frame from another site, and on return it shows
+ * the last picture it painted for a moment — the order the merchant left, even though OMS had
+ * already switched to the queue (measured on the live site: one stale frame, ~35 ms). A
+ * transparent frame keeps being painted, so the first frame on return is current. It also keeps
+ * its size, so OMS's layout does not change under it. `inert` keeps it out of the accessibility
+ * tree and out of reach of the keyboard, and `pointer-events: none` lets clicks through to the
+ * portal page underneath.
  *
  * Angular blocks an iframe `src` it considers untrusted, so the URL is passed through
  * `DomSanitizer`. That is safe here because the origin is our own configuration constant, never
@@ -56,7 +61,11 @@ const REVEAL_MS = 160;
 @Component({
   selector: 'fp-oms-frame',
   imports: [OmsSkeleton],
-  host: { '[class.hidden]': '!visible()' },
+  host: {
+    '[class.hidden]': '!visible()',
+    '[attr.inert]': "visible() ? null : ''",
+    '[attr.aria-hidden]': "visible() ? null : 'true'",
+  },
   styles: [
     `
       :host {
@@ -65,7 +74,7 @@ const REVEAL_MS = 160;
       }
 
       :host(.hidden) {
-        visibility: hidden;
+        opacity: 0;
         pointer-events: none;
       }
 
