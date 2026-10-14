@@ -11,7 +11,8 @@ import {
 import { DomSanitizer, type SafeResourceUrl } from '@angular/platform-browser';
 import { OMS_ORIGIN } from '../../core/config';
 import { trace } from '../../core/debug-log';
-import { OmsBridge } from '../../core/oms-bridge';
+import { OMS_QUEUE_PATH, OmsBridge } from '../../core/oms-bridge';
+import { OmsFrameKeeper } from '../../core/oms-frame-keeper';
 import { OmsSkeleton } from './oms-skeleton';
 
 /** How long the skeleton takes to fade into the loaded frame; keep in step with `.cover`. */
@@ -96,6 +97,15 @@ const REVEAL_MS = 160;
         transition: opacity 160ms ease-out;
       }
 
+      /* OMS's own page background (its fill1 token, as in OmsSkeleton), light and dark. */
+      .cover.blank {
+        background: oklch(0.976 0.001 264.547);
+      }
+
+      :host-context([data-mode='dark']) .cover.blank {
+        background: oklch(0.19 0.005 264.456);
+      }
+
       .cover.leaving {
         opacity: 0;
         pointer-events: none;
@@ -164,7 +174,13 @@ const REVEAL_MS = 160;
       ></iframe>
 
       @if (covered()) {
-        <fp-oms-skeleton class="cover" [class.leaving]="loaded()" />
+        <!-- The queue's skeleton when OMS opens on the queue; an order paints its own skeleton, so
+             that start is covered by plain background instead of a picture of the wrong screen. -->
+        @if (startsOnQueue) {
+          <fp-oms-skeleton class="cover" [class.leaving]="loaded()" />
+        } @else {
+          <div class="cover blank" [class.leaving]="loaded()"></div>
+        }
         <p class="sr-only" role="status">Loading OMS…</p>
       }
 
@@ -182,6 +198,7 @@ const REVEAL_MS = 160;
 export class OmsFrame implements OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
   private readonly bridge = inject(OmsBridge);
+  private readonly keeper = inject(OmsFrameKeeper);
 
   /** OMS is the page on screen. False while the merchant is on another portal page. */
   readonly visible = input(true);
@@ -197,8 +214,11 @@ export class OmsFrame implements OnDestroy {
   protected readonly covered = signal(true);
   protected readonly failed = signal(false);
   private revealTimer: ReturnType<typeof setTimeout> | undefined;
+  /** The screen this frame opens on: the queue, or the order a refreshed `/oms?order=…` names. */
+  private readonly startPath = this.keeper.startPath();
+  protected readonly startsOnQueue = this.startPath === OMS_QUEUE_PATH;
   protected src: SafeResourceUrl = this.sanitizer.bypassSecurityTrustResourceUrl(
-    this.bridge.embedUrl(),
+    this.bridge.embedUrl(false, this.startPath),
   );
 
   constructor() {
@@ -267,7 +287,9 @@ export class OmsFrame implements OnDestroy {
     this.covered.set(true);
     clearTimeout(this.revealTimer);
     // Changing the reference makes Angular re-create the iframe.
-    this.src = this.sanitizer.bypassSecurityTrustResourceUrl(this.bridge.embedUrl(true));
+    this.src = this.sanitizer.bypassSecurityTrustResourceUrl(
+      this.bridge.embedUrl(true, this.startPath),
+    );
     this.timeout = setTimeout(() => {
       if (!this.loaded()) this.failed.set(true);
     }, 12000);

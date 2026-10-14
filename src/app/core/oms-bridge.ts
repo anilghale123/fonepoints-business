@@ -21,6 +21,35 @@ import { Theme } from './theme';
 type HandoffState =
   'idle' | 'checking' | 'requesting' | 'sent' | 'accepted' | 'reused' | 'rejected';
 
+/** OMS's order queue, as a path under its embedded surface (`/embed`). */
+export const OMS_QUEUE_PATH = '/orders';
+
+/**
+ * An OMS screen path the portal will frame or ask OMS to open, or `null`: only the order queue and
+ * one order (`/orders`, `/orders/{id}`), as a plain path. The same rule OMS applies to
+ * `host.route.request` (`asHostRoute`), so a message or a URL can never point the frame elsewhere.
+ */
+export function asOmsPath(path: unknown): string | null {
+  if (typeof path !== 'string') return null;
+  return /^\/orders(\/[A-Za-z0-9._~%-]+)?$/.test(path) && !path.includes('..') ? path : null;
+}
+
+/** The OMS path for the portal's `?order=` query value: one order, or the queue. */
+export function omsPathForOrder(order: string | null | undefined): string {
+  return order ? `${OMS_QUEUE_PATH}/${encodeURIComponent(order)}` : OMS_QUEUE_PATH;
+}
+
+/** The portal's `?order=` value for an OMS path: the order's id, or `null` for the queue. */
+export function orderForOmsPath(path: string): string | null {
+  const id = path.slice(OMS_QUEUE_PATH.length + 1);
+  if (!id) return null;
+  try {
+    return decodeURIComponent(id);
+  } catch {
+    return null;
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class OmsBridge {
   private readonly theme = inject(Theme);
@@ -38,6 +67,14 @@ export class OmsBridge {
 
   /** When the portal last pushed the theme to OMS, for the status line. */
   readonly lastSentAt = computed(() => this.sentAt());
+
+  private readonly route = signal<string | null>(null);
+
+  /**
+   * The screen OMS last said it is on (`oms.route.changed`): `/orders` or `/orders/{id}`. `null`
+   * until the frame on screen has said. `OmsPage` mirrors it into the portal's URL.
+   */
+  readonly omsPath = this.route.asReadonly();
 
   /** How far the token handoff got, for the status line. */
   readonly authState = computed(() => this.handoff());
@@ -71,6 +108,7 @@ export class OmsBridge {
     this.frame = frame;
     this.ready.set(false);
     this.sentAt.set(null);
+    this.route.set(null);
     // A new document in the frame holds no session, so the handoff starts over for it.
     this.handoff.set('idle');
   }
@@ -86,12 +124,14 @@ export class OmsBridge {
    * Only ever used for the initial `src`. Later theme changes go over the channel, so the frame
    * is never reloaded to recolour it.
    */
-  embedUrl(cacheBust?: boolean): string {
+  embedUrl(cacheBust?: boolean, path: string = OMS_QUEUE_PATH): string {
     const hint = new URLSearchParams({
       theme: this.theme.resolved(),
       accent: this.theme.accent(),
     });
-    const base = cacheBust ? `${OMS_EMBED_URL}?r=${Date.now()}` : OMS_EMBED_URL;
+    // `OMS_EMBED_URL` is the queue; an order screen is the same surface one level down.
+    const screen = `${OMS_EMBED_URL.slice(0, -OMS_QUEUE_PATH.length)}${asOmsPath(path) ?? OMS_QUEUE_PATH}`;
+    const base = cacheBust ? `${screen}?r=${Date.now()}` : screen;
     return `${base}#${hint.toString()}`;
   }
 
@@ -186,7 +226,13 @@ export class OmsBridge {
       void this.sendGrant();
     }
 
-    // `oms.route.changed` is specified in `auth.md` section 8 and handled when that phase lands.
+    // The merchant moved inside OMS. Kept so the portal can put the screen in its own URL
+    // (`OmsPage`), which is what makes a refresh reopen the same order. Only order screens count.
+    if (message.type === 'oms.route.changed') {
+      const path = asOmsPath((message as { path?: unknown }).path);
+      if (path) this.route.set(path);
+    }
+
     // Unhandled types fall through, which is the intended behaviour: it is what lets OMS add a
     // message before the portal knows about it.
   }
@@ -276,17 +322,30 @@ export class OmsBridge {
     this.requestQueue('OMS clicked while on it: open the queue');
   }
 
-  private requestQueue(why: string): void {
-    const target = this.frame?.contentWindow;
-    if (!target || !this.ready()) return;
+  /**
+   * Opens an OMS screen in the kept frame — the order in the portal's URL, when the merchant comes
+   * back to `/oms?order=…` with the browser's back button.
+   */
+  openPath(path: string): void {
+    this.requestRoute(path, 'the portal URL names this screen');
+  }
 
-    trace('bridge', `→ OMS     host.route.request /orders (${why})`);
+  private requestQueue(why: string): void {
+    this.requestRoute(OMS_QUEUE_PATH, why);
+  }
+
+  private requestRoute(path: string, why: string): void {
+    const target = this.frame?.contentWindow;
+    const route = asOmsPath(path);
+    if (!target || !this.ready() || !route) return;
+
+    trace('bridge', `→ OMS     host.route.request ${route} (${why})`);
     target.postMessage(
       {
         source: HOST_MESSAGE_SOURCE,
         v: OMS_PROTOCOL_VERSION,
         type: 'host.route.request',
-        path: '/orders',
+        path: route,
       },
       OMS_ORIGIN,
     );

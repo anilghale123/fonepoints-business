@@ -1,5 +1,6 @@
 import { Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { trace } from './debug-log';
+import { OMS_QUEUE_PATH } from './oms-bridge';
 import { PortalSession, type PortalSessionUser } from './portal-session';
 
 /**
@@ -40,6 +41,14 @@ export class OmsFrameKeeper {
   /** OMS is the page on screen. */
   readonly visible = this.onScreen.asReadonly();
 
+  private readonly start = signal(OMS_QUEUE_PATH);
+
+  /**
+   * The OMS screen a new frame opens on: the queue, or the order named in the portal's URL
+   * (`/oms?order=…`), so refreshing the page on an order reopens that order.
+   */
+  readonly startPath = this.start.asReadonly();
+
   constructor() {
     // `kept` already turns false the instant the user changes; this forgets the owner too, so
     // the same merchant signing in again does not bring the old frame back before they open OMS.
@@ -53,12 +62,19 @@ export class OmsFrameKeeper {
     });
   }
 
-  /** The merchant opened OMS: create the frame if this merchant has none, and show it. */
-  show(): void {
+  /**
+   * The merchant opened OMS: create the frame if this merchant has none, and show it. `path` is the
+   * screen a new frame opens on (`OmsPage` reads it from the portal's URL).
+   */
+  show(path: string = OMS_QUEUE_PATH): void {
     const user = this.session.user();
     if (!user) return;
     if (!this.kept()) {
-      trace('page', 'OMS opened: creating the OMS frame and keeping it for this merchant');
+      trace(
+        'page',
+        `OMS opened: creating the OMS frame on ${path} and keeping it for this merchant`,
+      );
+      this.start.set(path);
       this.owner.set(user);
     } else {
       trace('page', 'OMS opened again: showing the kept frame (no reload)');
