@@ -255,18 +255,21 @@ export class OmsBridge {
   }
 
   /**
-   * The merchant is back on OMS after other portal pages, through the OMS link (or the back
-   * button). Like any portal section opened from the sidebar, OMS opens on its landing page, the
-   * order queue, even if it was left on an order (`host.route.request`). The frame was kept alive
-   * and only hidden, so nothing in it was refetched meanwhile: OMS refreshes what has gone stale
-   * (`host.visible`). An older OMS ignores either message. Skipped before OMS has spoken: a frame
-   * still loading is already on its first screen and has nothing stale.
+   * The merchant has left OMS for another portal page, and the frame is now hidden. Like any
+   * portal section, OMS should open on its landing page, the order queue, even if it was left on
+   * an order (`host.route.request`) — so it is sent there *now*, while nobody can see the frame.
+   * Sent on return instead, the frame would be shown still on the order and then switch to the
+   * queue: a visible flicker. An older OMS ignores the message. Skipped before OMS has spoken: a
+   * frame still loading is already on its first screen.
    */
-  showAgain(): void {
+  leave(): void {
     const target = this.frame?.contentWindow;
     if (!target || !this.ready()) return;
 
-    trace('bridge', '→ OMS     host.route.request /orders + host.visible (shown again)');
+    trace(
+      'bridge',
+      '→ OMS     host.route.request /orders (hidden: back on the queue before return)',
+    );
     target.postMessage(
       {
         source: HOST_MESSAGE_SOURCE,
@@ -276,6 +279,20 @@ export class OmsBridge {
       },
       OMS_ORIGIN,
     );
+  }
+
+  /**
+   * The merchant is back on OMS after other portal pages, through the OMS link (or the back
+   * button). The frame was kept alive and only hidden, so nothing in it was refetched meanwhile:
+   * OMS refreshes what has gone stale (`host.visible`). It is already on the order queue (`leave`).
+   * An older OMS ignores the message. Skipped before OMS has spoken: a frame still loading has
+   * nothing stale.
+   */
+  showAgain(): void {
+    const target = this.frame?.contentWindow;
+    if (!target || !this.ready()) return;
+
+    trace('bridge', '→ OMS     host.visible (shown again)');
     target.postMessage(
       { source: HOST_MESSAGE_SOURCE, v: OMS_PROTOCOL_VERSION, type: 'host.visible' },
       OMS_ORIGIN,

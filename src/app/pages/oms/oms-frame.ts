@@ -29,7 +29,9 @@ const REVEAL_MS = 160;
  * merchant opens OMS and keeps it while they visit other portal pages: it is only hidden
  * (`visible` false), so coming back costs no reload, no boot and no session check, and the merchant
  * is in the same OMS session, with its data already in memory; OMS reopens on its order queue, like
- * any portal section opened from the sidebar. `OmsFrameKeeper` decides when it exists:
+ * any portal section opened from the sidebar. The switch to the queue happens as the merchant
+ * *leaves* (`leave()`), while the frame is hidden, so there is nothing to see on return.
+ * `OmsFrameKeeper` decides when it exists:
  * it is destroyed on sign-out, when the portal session ends, and when a different merchant is
  * signed in, so a frame never outlives the merchant whose orders it holds. When the merchant comes
  * back, OMS is told (`host.visible`) and refreshes what went stale while it was hidden.
@@ -195,9 +197,11 @@ export class OmsFrame implements OnDestroy {
     // Re-registers whenever the element identity changes, which `reload()` deliberately causes.
     effect(() => this.bridge.register(this.frame()?.nativeElement ?? null));
 
-    // Back on OMS after other portal pages: nothing in the frame was refetched meanwhile.
+    // Leaving OMS: send it to its queue while it is hidden. Back on OMS after other portal pages:
+    // nothing in the frame was refetched meanwhile.
     effect(() => {
       const visible = this.visible();
+      if (!visible && this.wasVisible) this.bridge.leave();
       if (visible && !this.wasVisible) this.bridge.showAgain();
       this.wasVisible = visible;
     });
