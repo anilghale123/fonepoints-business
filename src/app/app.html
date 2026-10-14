@@ -20,6 +20,7 @@
               routerLinkActive="active"
               [attr.aria-current]="rla.isActive ? 'page' : null"
               #rla="routerLinkActive"
+              (click)="navClicked(item)"
             >
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                 <path

@@ -1,7 +1,8 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { filter } from 'rxjs';
-import { NAV_SECTIONS } from './core/nav';
+import { NAV_SECTIONS, type NavItem } from './core/nav';
+import { OmsBridge } from './core/oms-bridge';
 import { OmsFrameKeeper } from './core/oms-frame-keeper';
 import { PortalSession } from './core/portal-session';
 import { Profile } from './core/profile';
@@ -47,6 +48,7 @@ export class App {
   protected readonly session = inject(PortalSession);
   protected readonly profile = inject(Profile);
   protected readonly omsFrame = inject(OmsFrameKeeper);
+  private readonly bridge = inject(OmsBridge);
   protected readonly sections = NAV_SECTIONS;
   private readonly url = signal('');
 
@@ -66,6 +68,14 @@ export class App {
     }
     return 'Dashboard';
   });
+
+  /**
+   * OMS clicked while OMS is already on screen: the router has nowhere to go, so ask OMS itself to
+   * open its order queue, the section's landing page (`OmsBridge.openQueue`).
+   */
+  protected navClicked(item: NavItem): void {
+    if (item.embedded && this.omsFrame.visible()) this.bridge.openQueue();
+  }
 
   protected openSettings(section: SettingsSection): void {
     this.settingsSection.set(section);

@@ -263,13 +263,24 @@ export class OmsBridge {
    * frame still loading is already on its first screen.
    */
   leave(): void {
+    this.requestQueue('hidden: back on the queue before return');
+  }
+
+  /**
+   * The merchant clicked OMS in the sidebar while already on it. The router sees the same URL and
+   * does nothing, so without this a merchant on an order would stay there; like any portal section,
+   * the link opens OMS's landing page, the order queue (`host.route.request`). OMS replaces the
+   * history entry, so the back button does not step back to the order.
+   */
+  openQueue(): void {
+    this.requestQueue('OMS clicked while on it: open the queue');
+  }
+
+  private requestQueue(why: string): void {
     const target = this.frame?.contentWindow;
     if (!target || !this.ready()) return;
 
-    trace(
-      'bridge',
-      '→ OMS     host.route.request /orders (hidden: back on the queue before return)',
-    );
+    trace('bridge', `→ OMS     host.route.request /orders (${why})`);
     target.postMessage(
       {
         source: HOST_MESSAGE_SOURCE,
